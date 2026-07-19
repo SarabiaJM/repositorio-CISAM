@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Consulta de iniciativas universitarias de bienestar emocional y salud mental en las universidades valencianas.">
+  <title>Repositorio de Iniciativas en Salud Mental de las Universidades Valencianas</title>
+  <link rel="stylesheet" href="styles.css?v=5">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="./" aria-label="Inicio del repositorio">
+        <img src="assets/Logo-GVA_cast.webp" alt="Generalitat Valenciana — Conselleria de Educación, Cultura y Universidades">
+        <span class="brand-divider" aria-hidden="true"></span>
+        <span class="brand-title">Repositorio de Iniciativas en Salud Mental<br>de las Universidades Valencianas</span>
+      </a>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="intro" aria-labelledby="page-title">
+      <p class="eyebrow">RECURSOS UNIVERSITARIOS · COMUNITAT VALENCIANA</p>
+      <h1 id="page-title">Iniciativas para el bienestar emocional</h1>
+      <p class="intro-copy">Explora programas, recursos y acciones de las universidades valencianas para promover la salud mental de su comunidad.</p>
+    </section>
+
+    <section class="controls" aria-labelledby="filters-title">
+      <div class="controls-heading">
+        <div>
+          <p class="eyebrow">EXPLORAR EL REPOSITORIO</p>
+          <h2 id="filters-title">Busca y filtra iniciativas</h2>
+        </div>
+        <button id="clear-filters" class="button button-secondary" type="button">Limpiar filtros</button>
+      </div>
+      <div class="search-row">
+        <label class="search-label" for="search">Búsqueda libre</label>
+        <div class="search-wrap">
+          <span aria-hidden="true">⌕</span>
+          <input id="search" type="search" placeholder="Nombre, descripción, universidad o unidad responsable" autocomplete="off">
+        </div>
+        <label class="sort-label" for="sort">Ordenar</label>
+        <select id="sort" aria-label="Ordenar resultados">
+          <option value="name-asc">Nombre (A–Z)</option>
+          <option value="name-desc">Nombre (Z–A)</option>
+          <option value="university-asc">Universidad (A–Z)</option>
+          <option value="university-desc">Universidad (Z–A)</option>
+        </select>
+      </div>
+      <div id="filters" class="filter-grid" aria-live="polite"></div>
+    </section>
+
+    <section class="results-section" aria-labelledby="results-title">
+      <div class="results-heading">
+        <div><h2 id="results-title">Iniciativas</h2><p id="result-count" class="result-count">Cargando…</p></div>
+        <button id="download-csv" class="button button-primary" type="button" disabled>Descargar CSV filtrado</button>
+      </div>
+      <div id="status" class="status" role="status" aria-live="polite">Cargando iniciativas…</div>
+      <div id="cards" class="cards"></div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <p class="eyebrow">UNIVERSIDADES PARTICIPANTES</p>
+      <div class="university-logos" aria-label="Universidades participantes">
+        <div class="university-logo"><img src="assets/Universidad de Alicante.jpg" alt="Universidad de Alicante"></div>
+        <div class="university-logo"><img src="assets/logo-UV.jpg" alt="Universitat de València"></div>
+        <div class="university-logo"><img src="assets/logo-vector-universitat-politecnica-valencia.png" alt="Universitat Politècnica de València"></div>
+        <div class="university-logo"><img src="assets/logo-vector-universitat-jaume-i.png" alt="Universitat Jaume I"></div>
+        <div class="university-logo"><img src="assets/UMH.jpg" alt="Universidad Miguel Hernández de Elche"></div>
+        <div class="university-logo"><img src="assets/logo-vector-universidad-ceu-cardenal-herrera.png" alt="Universidad CEU Cardenal Herrera"></div>
+        <div class="university-logo"><img src="assets/San Vicente Martir.png" alt="Universidad Católica de Valencia San Vicente Mártir"></div>
+        <div class="university-logo"><img src="assets/Universidad-europea-logo.png" alt="Universidad Europea de Valencia"></div>
+        <div class="university-logo"><img src="assets/Logo_VIU.png" alt="Universidad Internacional de Valencia"></div>
+      </div>
+      <p class="footer-note">Desarrollado por la Universidad Miguel Hernández de Elche<br>Delegación del Rector para Campus Saludables y Deportes</p>
+    </div>
+  </footer>
+
+  <dialog id="initiative-dialog" class="initiative-dialog" aria-labelledby="dialog-title">
+    <div class="dialog-top"><p class="eyebrow">FICHA DE LA INICIATIVA</p><button id="close-dialog" class="icon-button" type="button" aria-label="Cerrar ficha">×</button></div>
+    <div id="dialog-content"></div>
+  </dialog>
+  <div id="dialog-backdrop" class="dialog-backdrop" hidden></div>
+</body>
+</html>
