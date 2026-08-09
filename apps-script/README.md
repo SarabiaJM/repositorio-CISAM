@@ -140,4 +140,3 @@ Después de superar todas las pruebas:
 - Google Forms y Google Sheets no comparten una transacción. Las filas de Sheets se actualizan atómicamente; la sincronización del selector se ejecuta inmediatamente después y se reintenta diariamente si falla.
 - `FormResponse.submit()` no activa un activador instalable de envío. Las pruebas integrales deben hacerse desde el formulario publicado de la copia.
 - Al cambiar el destino de respuestas de una copia del formulario, Google puede crear otra pestaña de respuestas. No añada columnas auxiliares a ninguna pestaña de respuestas.
-

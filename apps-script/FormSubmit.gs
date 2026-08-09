@@ -230,4 +230,3 @@ function cisamRegisterProcessingError_(responseId, requestType, error) {
   range.setNumberFormat('@');
   range.setValues(values);
 }
-

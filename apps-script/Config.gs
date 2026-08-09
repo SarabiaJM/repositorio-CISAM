@@ -306,4 +306,3 @@ function cisamEnsureRows_(sheet, requiredLastRow) {
     sheet.insertRowsAfter(sheet.getMaxRows(), requiredLastRow - sheet.getMaxRows());
   }
 }
-

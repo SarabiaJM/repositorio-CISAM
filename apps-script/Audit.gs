@@ -268,4 +268,3 @@ function cisamColumnLetter_(column) {
   }
   return result;
 }
-
