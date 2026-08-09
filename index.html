@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Consulta de iniciativas universitarias de bienestar emocional y salud mental en las universidades valencianas.">
   <title>Repositorio de Iniciativas en Salud Mental de las Universidades Valencianas</title>
-  <link rel="stylesheet" href="styles.css?v=5">
+  <link rel="stylesheet" href="styles.css?v=6">
   <script src="app.js" defer></script>
 </head>
 <body>
@@ -38,7 +38,7 @@
         <label class="search-label" for="search">Búsqueda libre</label>
         <div class="search-wrap">
           <span aria-hidden="true">⌕</span>
-          <input id="search" type="search" placeholder="Nombre, descripción, universidad o unidad responsable" autocomplete="off">
+          <input id="search" type="search" placeholder="ID, nombre, descripción, universidad o unidad" autocomplete="off">
         </div>
         <label class="sort-label" for="sort">Ordenar</label>
         <select id="sort" aria-label="Ordenar resultados">
@@ -48,15 +48,15 @@
           <option value="university-desc">Universidad (Z–A)</option>
         </select>
       </div>
-      <div id="filters" class="filter-grid" aria-live="polite"></div>
+      <div id="filters" class="filter-grid"></div>
     </section>
 
     <section class="results-section" aria-labelledby="results-title">
       <div class="results-heading">
-        <div><h2 id="results-title">Iniciativas</h2><p id="result-count" class="result-count">Cargando…</p></div>
+        <div><h2 id="results-title">Iniciativas</h2><p id="result-count" class="result-count" role="status" aria-live="polite" aria-atomic="true">Cargando…</p></div>
         <button id="download-csv" class="button button-primary" type="button" disabled>Descargar CSV filtrado</button>
       </div>
-      <div id="status" class="status" role="status" aria-live="polite">Cargando iniciativas…</div>
+      <div id="status" class="status">Cargando iniciativas…</div>
       <div id="cards" class="cards"></div>
     </section>
   </main>
