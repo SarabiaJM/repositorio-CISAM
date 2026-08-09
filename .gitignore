@@ -1,0 +1,10 @@
+# Sistema operativo y editores
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Dependencias y salidas temporales (la aplicación no las necesita)
+node_modules/
+dist/
+build/
+*.log
