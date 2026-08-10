@@ -204,7 +204,7 @@ const TRANSLATIONS = deepFreeze({
     'detail.email': 'Adreça electrònica de contacte',
     'detail.phone': 'Telèfon de contacte',
     'detail.url': 'Lloc web',
-    'university.alicante': "Universitat d'Alacant",
+    'university.alicante': 'Universitat d’Alacant',
     'warning.canonical': 'Valor canònic sense traducció valenciana en {field}: {value}'
   }
 });
@@ -817,7 +817,14 @@ function applyFilters({ resetProgress = true } = {}) {
 
   state.filtered = state.rows.filter((row) => {
     const searchableValues = SEARCH_FIELD_KEYS.map((key) => column(row, FIELDS[key]));
-    searchableValues.push(translateCanonicalValue('university', column(row, FIELDS.university)));
+    const university = display(column(row, FIELDS.university));
+    searchableValues.push(translateCanonicalValue('university', university));
+    if (['Universidad de Alicante', "Universitat d'Alacant"].includes(university)) {
+      searchableValues.push(
+        TRANSLATIONS.es['university.alicante'],
+        TRANSLATIONS.va['university.alicante']
+      );
+    }
     const searchableText = normalizeSearch(searchableValues.join(' '));
     const matchesSearch = !query || searchableText.includes(query);
     const matchesFilters = FILTERS.every(([key]) => (
