@@ -29,6 +29,7 @@ const URL_PARAM_SET = new Set(URL_PARAM_ORDER);
 const HISTORY_STATE_KEY = 'cisamDialogEntry';
 const QUERY_MAX_LENGTH = 300;
 const SEARCH_URL_DELAY = 180;
+const RESULTS_BATCH_SIZE = 12;
 
 function deepFreeze(value) {
   Object.values(value).forEach((item) => {
@@ -71,6 +72,13 @@ const TRANSLATIONS = deepFreeze({
     'results.one': '1 resultado',
     'results.many': '{count} resultados',
     'results.none': 'No hay iniciativas que coincidan con los criterios seleccionados.',
+    'loadMore.label': 'Cargar más',
+    'loadMore.progressOne': 'Mostrando 1 de 1 resultado',
+    'loadMore.progressMany': 'Mostrando {visible} de {total} resultados',
+    'loadMore.ariaOne': 'Cargar 1 iniciativa más. Se muestran {visible} de {total} resultados.',
+    'loadMore.ariaMany': 'Cargar {amount} iniciativas más. Se muestran {visible} de {total} resultados.',
+    'loadMore.announcementOne': 'Se ha cargado 1 iniciativa más. Se muestran {visible} de {total} resultados.',
+    'loadMore.announcementMany': 'Se han cargado {amount} iniciativas más. Se muestran {visible} de {total} resultados.',
     'download.label': 'Descargar CSV filtrado',
     'download.ariaLabel': 'Descargar las iniciativas filtradas en CSV',
     'download.filename': 'iniciativas-salud-mental-filtradas.csv',
@@ -148,6 +156,13 @@ const TRANSLATIONS = deepFreeze({
     'results.one': '1 resultat',
     'results.many': '{count} resultats',
     'results.none': 'No hi ha iniciatives que coincidisquen amb els criteris seleccionats.',
+    'loadMore.label': 'Carrega’n més',
+    'loadMore.progressOne': 'Mostrant 1 d’1 resultat',
+    'loadMore.progressMany': 'Mostrant {visible} de {total} resultats',
+    'loadMore.ariaOne': 'Carrega 1 iniciativa més. Se’n mostren {visible} de {total} resultats.',
+    'loadMore.ariaMany': 'Carrega {amount} iniciatives més. Se’n mostren {visible} de {total} resultats.',
+    'loadMore.announcementOne': 'S’ha carregat 1 iniciativa més. Se’n mostren {visible} de {total} resultats.',
+    'loadMore.announcementMany': 'S’han carregat {amount} iniciatives més. Se’n mostren {visible} de {total} resultats.',
     'download.label': 'Descarrega el CSV filtrat',
     'download.ariaLabel': 'Descarrega les iniciatives filtrades en CSV',
     'download.filename': 'iniciatives-salut-mental-filtrades.csv',
@@ -344,7 +359,9 @@ const state = {
   ambiguousIds: new Set(),
   filterOptions: new Map(),
   urlNoticeKey: '',
-  applyingUrl: false
+  applyingUrl: false,
+  visibleCount: 0,
+  listSignature: ''
 };
 
 const canonicalWarnings = new Set();
@@ -352,6 +369,7 @@ const cardTriggers = new Map();
 let lastDialogTrigger = null;
 let searchUrlTimer = null;
 let liveMessageTimer = null;
+let loadMoreMessageTimer = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -573,6 +591,19 @@ function collectInterfaceState() {
   return interfaceState;
 }
 
+function getListStateSignature(interfaceState = collectInterfaceState()) {
+  const listState = {
+    q: sanitizeUrlQuery(interfaceState.q),
+    sort: SORT_VALUES.includes(interfaceState.sort) ? interfaceState.sort : 'name-asc'
+  };
+
+  FILTERS.forEach(([key]) => {
+    listState[key] = String(interfaceState[key] ?? '');
+  });
+
+  return JSON.stringify(listState);
+}
+
 function createCanonicalUrl(interfaceState, { includeId = true } = {}) {
   const url = new URL(window.location.href);
   const unknownParameters = [];
@@ -776,7 +807,7 @@ function buildFilters(selections = {}) {
   });
 }
 
-function applyFilters() {
+function applyFilters({ resetProgress = true } = {}) {
   const query = normalizeSearch($('search').value);
   const selected = {};
 
@@ -796,7 +827,14 @@ function applyFilters() {
   });
 
   sortRows();
-  render();
+  const listSignature = getListStateSignature();
+  if (resetProgress || listSignature !== state.listSignature) {
+    state.visibleCount = Math.min(RESULTS_BATCH_SIZE, state.filtered.length);
+  } else {
+    state.visibleCount = Math.min(state.visibleCount || RESULTS_BATCH_SIZE, state.filtered.length);
+  }
+  state.listSignature = listSignature;
+  renderVisibleResults();
 }
 
 function sortRows() {
@@ -816,10 +854,47 @@ function sortRows() {
   });
 }
 
-function render() {
+function updateLoadMoreControls() {
+  const controls = $('load-more-controls');
+  const progress = $('load-more-progress');
+  const button = $('load-more');
+  const total = state.filtered.length;
+  const visible = Math.min(state.visibleCount, total);
+
+  if (total === 0) {
+    controls.hidden = true;
+    button.hidden = true;
+    progress.textContent = '';
+    $('load-more-status').textContent = '';
+    return;
+  }
+
+  controls.hidden = false;
+  progress.textContent = total === 1
+    ? t('loadMore.progressOne')
+    : t('loadMore.progressMany', { visible, total });
+
+  const remaining = total - visible;
+  const amount = Math.min(RESULTS_BATCH_SIZE, remaining);
+  button.hidden = remaining === 0;
+  button.textContent = t('loadMore.label');
+  if (remaining > 0) {
+    button.setAttribute('aria-label', t(amount === 1 ? 'loadMore.ariaOne' : 'loadMore.ariaMany', {
+      amount,
+      visible,
+      total
+    }));
+  } else {
+    button.removeAttribute('aria-label');
+  }
+}
+
+function renderVisibleResults() {
   const cards = $('cards');
   const resultCount = state.filtered.length;
 
+  window.clearTimeout(loadMoreMessageTimer);
+  $('load-more-status').textContent = '';
   cards.replaceChildren();
   cardTriggers.clear();
   $('result-count').textContent = resultCount === 1
@@ -831,16 +906,54 @@ function render() {
 
   if (resultCount === 0) {
     $('status').textContent = t('results.none');
+    updateLoadMoreControls();
     return;
   }
 
   $('status').textContent = '';
-  state.filtered.forEach((row) => cards.append(createCard(row)));
+  const fragment = document.createDocumentFragment();
+  state.filtered.slice(0, state.visibleCount).forEach((row) => fragment.append(createCard(row)));
+  cards.append(fragment);
+  updateLoadMoreControls();
 
   if (state.dialogRow) {
     const dialogId = display(column(state.dialogRow, FIELDS.id));
     const replacementTrigger = cardTriggers.get(dialogId);
     if (replacementTrigger) lastDialogTrigger = replacementTrigger;
+  }
+}
+
+function announceLoadedBatch(amount) {
+  const region = $('load-more-status');
+  const total = state.filtered.length;
+  const visible = Math.min(state.visibleCount, total);
+  window.clearTimeout(loadMoreMessageTimer);
+  region.textContent = '';
+  loadMoreMessageTimer = window.setTimeout(() => {
+    region.textContent = t(amount === 1 ? 'loadMore.announcementOne' : 'loadMore.announcementMany', {
+      amount,
+      visible,
+      total
+    });
+  }, 20);
+}
+
+function loadNextBatch() {
+  const button = $('load-more');
+  const hadButtonFocus = document.activeElement === button;
+  const previousVisibleCount = state.visibleCount;
+  const nextVisibleCount = Math.min(previousVisibleCount + RESULTS_BATCH_SIZE, state.filtered.length);
+  if (nextVisibleCount <= previousVisibleCount) return;
+
+  const fragment = document.createDocumentFragment();
+  state.filtered.slice(previousVisibleCount, nextVisibleCount).forEach((row) => fragment.append(createCard(row)));
+  $('cards').append(fragment);
+  state.visibleCount = nextVisibleCount;
+  updateLoadMoreControls();
+  announceLoadedBatch(nextVisibleCount - previousVisibleCount);
+
+  if (hadButtonFocus && button.hidden) {
+    $('load-more-progress').focus({ preventScroll: true });
   }
 }
 
@@ -1173,6 +1286,8 @@ function renderLoadError() {
   $('copy-view-link').disabled = true;
   $('status').className = 'status error';
   $('status').textContent = t('error.load');
+  $('load-more-controls').hidden = true;
+  $('load-more-status').textContent = '';
 }
 
 function setLanguage(language, { updateUrl = true } = {}) {
@@ -1186,7 +1301,7 @@ function setLanguage(language, { updateUrl = true } = {}) {
 
   if (state.loaded) {
     buildFilters(selections);
-    applyFilters();
+    applyFilters({ resetProgress: false });
     if ($('initiative-dialog').open && state.dialogRow) {
       renderDialogContent(state.dialogRow);
       updateDocumentTitle();
@@ -1218,9 +1333,10 @@ function applyUrlState(rawState = readUrlState()) {
     writeStoredLanguage(state.language);
     $('search').value = sanitized.q;
     $('sort').value = sanitized.sort;
+    const shouldResetProgress = getListStateSignature(sanitized) !== state.listSignature;
     applyStaticTranslations();
     buildFilters(sanitized);
-    applyFilters();
+    applyFilters({ resetProgress: shouldResetProgress });
 
     const row = sanitized.id ? findRowById(sanitized.id) : null;
     if (row) {
@@ -1308,6 +1424,7 @@ $('download-csv').addEventListener('click', downloadCSV);
 $('copy-view-link').addEventListener('click', () => copyCurrentLink(false));
 $('copy-dialog-link').addEventListener('click', () => copyCurrentLink(true));
 $('clear-filters').addEventListener('click', clearFilters);
+$('load-more').addEventListener('click', loadNextBatch);
 $('close-dialog').addEventListener('click', requestDialogClose);
 $('initiative-dialog').addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
