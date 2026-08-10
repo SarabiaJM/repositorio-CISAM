@@ -287,10 +287,43 @@ a {
   padding: 44px 0 70px;
 }
 
+.results-actions,
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .result-count {
   margin: 4px 0 0;
   color: var(--muted);
   font-size: 14px;
+}
+
+.url-notice {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  color: #7a3f00;
+  background: #fff4e5;
+  border-left: 4px solid var(--focus);
+  border-radius: 7px;
+}
+
+.url-notice:empty {
+  display: none;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
 }
 
 .cards {
@@ -525,6 +558,12 @@ a {
   margin-top: 4px;
 }
 
+.dialog-actions {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
 .external-link,
 .contact-link {
   overflow-wrap: anywhere;
@@ -649,6 +688,17 @@ a {
 
   .results-heading {
     flex-wrap: wrap;
+  }
+
+  .results-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .results-actions .button,
+  .dialog-actions .button {
+    max-width: 100%;
+    white-space: normal;
   }
 
   .detail-item.full {

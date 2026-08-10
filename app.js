@@ -6,6 +6,29 @@ const LANGUAGE_CONFIG = Object.freeze({
   es: Object.freeze({ documentLanguage: 'es', locale: 'es' }),
   va: Object.freeze({ documentLanguage: 'ca-valencia', locale: 'ca' })
 });
+const SORT_VALUES = Object.freeze([
+  'name-asc',
+  'name-desc',
+  'university-asc',
+  'university-desc'
+]);
+const URL_PARAM_ORDER = Object.freeze([
+  'lang',
+  'q',
+  'university',
+  'scope',
+  'type',
+  'timing',
+  'funding',
+  'audience',
+  'space',
+  'sort',
+  'id'
+]);
+const URL_PARAM_SET = new Set(URL_PARAM_ORDER);
+const HISTORY_STATE_KEY = 'cisamDialogEntry';
+const QUERY_MAX_LENGTH = 300;
+const SEARCH_URL_DELAY = 180;
 
 function deepFreeze(value) {
   Object.values(value).forEach((item) => {
@@ -51,6 +74,13 @@ const TRANSLATIONS = deepFreeze({
     'download.label': 'Descargar CSV filtrado',
     'download.ariaLabel': 'Descargar las iniciativas filtradas en CSV',
     'download.filename': 'iniciativas-salud-mental-filtradas.csv',
+    'share.view': 'Copiar enlace de esta vista',
+    'share.viewAria': 'Copiar enlace de la vista actual',
+    'share.dialog': 'Copiar enlace de esta ficha',
+    'share.dialogAria': 'Copiar enlace de la ficha {identifier}: {name}',
+    'share.success': 'Enlace copiado.',
+    'share.failure': 'No se ha podido copiar el enlace.',
+    'url.idNotFound': 'No se ha encontrado la iniciativa solicitada.',
     'loading.short': 'Cargando…',
     'loading.long': 'Cargando iniciativas…',
     'error.short': 'No se han podido cargar las iniciativas.',
@@ -121,6 +151,13 @@ const TRANSLATIONS = deepFreeze({
     'download.label': 'Descarrega el CSV filtrat',
     'download.ariaLabel': 'Descarrega les iniciatives filtrades en CSV',
     'download.filename': 'iniciatives-salut-mental-filtrades.csv',
+    'share.view': 'Copia l’enllaç d’aquesta vista',
+    'share.viewAria': 'Copia l’enllaç de la vista actual',
+    'share.dialog': 'Copia l’enllaç d’aquesta fitxa',
+    'share.dialogAria': 'Copia l’enllaç de la fitxa {identifier}: {name}',
+    'share.success': 'Enllaç copiat.',
+    'share.failure': 'No s’ha pogut copiar l’enllaç.',
+    'url.idNotFound': 'No s’ha trobat la iniciativa sol·licitada.',
     'loading.short': 'Carregant…',
     'loading.long': 'Carregant iniciatives…',
     'error.short': 'No s’han pogut carregar les iniciatives.',
@@ -302,12 +339,19 @@ const state = {
   language: 'es',
   loaded: false,
   loadError: null,
-  dialogRow: null
+  dialogRow: null,
+  idLookup: new Map(),
+  ambiguousIds: new Set(),
+  filterOptions: new Map(),
+  urlNoticeKey: '',
+  applyingUrl: false
 };
 
 const canonicalWarnings = new Set();
 const cardTriggers = new Map();
 let lastDialogTrigger = null;
+let searchUrlTimer = null;
+let liveMessageTimer = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -332,6 +376,13 @@ function normalizeSearch(value) {
 
 function display(value) {
   return String(value ?? '').trim();
+}
+
+function sanitizeUrlQuery(value) {
+  return String(value ?? '')
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .trim()
+    .slice(0, QUERY_MAX_LENGTH);
 }
 
 function parseCSV(text) {
@@ -445,35 +496,158 @@ function writeStoredLanguage(language) {
   }
 }
 
-function languageFromUrl() {
-  try {
-    return new URL(window.location.href).searchParams.get('lang') || '';
-  } catch (error) {
-    return '';
-  }
+function readUrlState(source = window.location.href) {
+  const url = new URL(source, window.location.href);
+  const urlState = {};
+
+  URL_PARAM_ORDER.forEach((parameter) => {
+    urlState[parameter] = url.searchParams.get(parameter) ?? '';
+  });
+
+  return urlState;
 }
 
-function resolveInitialLanguage() {
-  const urlLanguage = languageFromUrl();
+function resolveInitialLanguage(urlLanguage = '') {
   if (VALID_LANGUAGES.includes(urlLanguage)) return urlLanguage;
 
   const storedLanguage = readStoredLanguage();
   return VALID_LANGUAGES.includes(storedLanguage) ? storedLanguage : 'es';
 }
 
-function updateLanguageUrl(language) {
-  try {
-    const url = new URL(window.location.href);
-    url.searchParams.set('lang', language);
-    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
-  } catch (error) {
-    // Una URL no modificable no impide utilizar la interfaz.
+function findRowById(value) {
+  const raw = String(value ?? '');
+  if (!raw.trim() || /[\u0000-\u001f\u007f]/.test(raw)) return null;
+
+  const normalizedId = raw.trim().toLowerCase();
+  if (state.ambiguousIds.has(normalizedId)) return null;
+  return state.idLookup.get(normalizedId) || null;
+}
+
+function sanitizeUrlState(rawState, { dataReady = state.loaded } = {}) {
+  const sanitized = {
+    lang: VALID_LANGUAGES.includes(rawState.lang)
+      ? rawState.lang
+      : resolveInitialLanguage(rawState.lang),
+    q: sanitizeUrlQuery(rawState.q),
+    sort: SORT_VALUES.includes(rawState.sort) ? rawState.sort : 'name-asc',
+    id: '',
+    invalidIdRequested: false
+  };
+
+  FILTERS.forEach(([key]) => {
+    const candidate = String(rawState[key] ?? '');
+    sanitized[key] = dataReady && state.filterOptions.get(key)?.has(candidate) ? candidate : '';
+  });
+
+  if (dataReady) {
+    const requestedId = String(rawState.id ?? '');
+    const trimmedId = requestedId.trim();
+    if (trimmedId) {
+      const row = findRowById(requestedId);
+      if (row) {
+        sanitized.id = display(column(row, FIELDS.id));
+      } else {
+        sanitized.invalidIdRequested = true;
+      }
+    }
   }
+
+  return sanitized;
+}
+
+function collectInterfaceState() {
+  const interfaceState = {
+    lang: state.language,
+    q: sanitizeUrlQuery($('search').value),
+    sort: SORT_VALUES.includes($('sort').value) ? $('sort').value : 'name-asc',
+    id: state.dialogRow && $('initiative-dialog').open
+      ? display(column(state.dialogRow, FIELDS.id))
+      : ''
+  };
+
+  FILTERS.forEach(([key]) => {
+    const select = $(`filter-${key}`);
+    interfaceState[key] = select?.value || '';
+  });
+
+  return interfaceState;
+}
+
+function createCanonicalUrl(interfaceState, { includeId = true } = {}) {
+  const url = new URL(window.location.href);
+  const unknownParameters = [];
+
+  url.searchParams.forEach((value, key) => {
+    if (!URL_PARAM_SET.has(key)) unknownParameters.push([key, value]);
+  });
+
+  const parameters = new URLSearchParams();
+  parameters.set('lang', VALID_LANGUAGES.includes(interfaceState.lang) ? interfaceState.lang : 'es');
+
+  const query = sanitizeUrlQuery(interfaceState.q);
+  if (query) parameters.set('q', query);
+
+  FILTERS.forEach(([key]) => {
+    const value = String(interfaceState[key] ?? '');
+    if (value) parameters.set(key, value);
+  });
+
+  if (SORT_VALUES.includes(interfaceState.sort) && interfaceState.sort !== 'name-asc') {
+    parameters.set('sort', interfaceState.sort);
+  }
+
+  if (includeId && interfaceState.id) parameters.set('id', interfaceState.id);
+  unknownParameters.forEach(([key, value]) => parameters.append(key, value));
+  url.search = parameters.toString();
+  return url;
+}
+
+function isDialogHistoryEntry() {
+  return Boolean(window.history.state?.[HISTORY_STATE_KEY]?.dialog);
+}
+
+function createHistoryState(dialogEntry) {
+  const currentState = window.history.state;
+
+  if (!dialogEntry) {
+    if (!currentState || typeof currentState !== 'object' || Array.isArray(currentState)) return currentState;
+    const ownState = currentState[HISTORY_STATE_KEY];
+    const nextState = { ...currentState };
+    delete nextState[HISTORY_STATE_KEY];
+    if (ownState && Object.prototype.hasOwnProperty.call(ownState, 'foreignState') && Object.keys(nextState).length === 0) {
+      return ownState.foreignState;
+    }
+    return nextState;
+  }
+
+  const canMergeState = currentState && typeof currentState === 'object' && !Array.isArray(currentState);
+  const nextState = canMergeState
+    ? { ...currentState }
+    : {};
+  nextState[HISTORY_STATE_KEY] = { dialog: true };
+  if (currentState != null && !canMergeState) {
+    nextState[HISTORY_STATE_KEY].foreignState = currentState;
+  }
+  return nextState;
+}
+
+function writeUrlState(mode, interfaceState = collectInterfaceState(), options = {}) {
+  const url = createCanonicalUrl(interfaceState, options);
+  const dialogEntry = options.dialogEntry ?? (Boolean(interfaceState.id) && isDialogHistoryEntry());
+  const historyState = createHistoryState(dialogEntry);
+  const relativeUrl = `${url.pathname}${url.search}${url.hash}`;
+
+  if (mode === 'push') {
+    window.history.pushState(historyState, '', relativeUrl);
+  } else {
+    window.history.replaceState(historyState, '', relativeUrl);
+  }
+
+  return url.href;
 }
 
 function applyStaticTranslations() {
   document.documentElement.lang = LANGUAGE_CONFIG[state.language].documentLanguage;
-  document.title = t('page.title');
 
   const metaDescription = document.querySelector('meta[name="description"]');
   if (metaDescription) metaDescription.setAttribute('content', t('page.description'));
@@ -496,6 +670,63 @@ function applyStaticTranslations() {
   });
 
   $('language-select').value = state.language;
+  renderUrlNotice();
+  updateDocumentTitle();
+}
+
+function updateDocumentTitle() {
+  if (!state.dialogRow || !$('initiative-dialog').open) {
+    document.title = t('page.title');
+    return;
+  }
+
+  const name = display(localizedColumn(state.dialogRow, 'name')) || t('card.unnamed');
+  document.title = `${name} | ${t('page.title')}`;
+}
+
+function renderUrlNotice() {
+  $('url-notice').textContent = state.urlNoticeKey ? t(state.urlNoticeKey) : '';
+}
+
+function clearUrlNotice() {
+  state.urlNoticeKey = '';
+  renderUrlNotice();
+}
+
+function announceCopyResult(success) {
+  const region = $('copy-status');
+  window.clearTimeout(liveMessageTimer);
+  region.textContent = '';
+  liveMessageTimer = window.setTimeout(() => {
+    region.textContent = t(success ? 'share.success' : 'share.failure');
+  }, 20);
+}
+
+function buildDataIndexes() {
+  state.idLookup = new Map();
+  state.ambiguousIds = new Set();
+  state.filterOptions = new Map();
+
+  state.rows.forEach((row) => {
+    const id = display(column(row, FIELDS.id));
+    if (id) {
+      const normalizedId = id.toLowerCase();
+      if (state.idLookup.has(normalizedId)) {
+        state.ambiguousIds.add(normalizedId);
+        state.idLookup.delete(normalizedId);
+      } else if (!state.ambiguousIds.has(normalizedId)) {
+        state.idLookup.set(normalizedId, row);
+      }
+    }
+  });
+
+  state.ambiguousIds.forEach((id) => {
+    console.error(`No se puede abrir mediante URL el identificador duplicado: ${id}`);
+  });
+
+  FILTERS.forEach(([key]) => {
+    state.filterOptions.set(key, new Set(state.rows.flatMap((row) => values(row, key))));
+  });
 }
 
 function currentFilterSelections() {
@@ -513,7 +744,7 @@ function buildFilters(selections = {}) {
   container.replaceChildren();
 
   FILTERS.forEach(([key, labelKey]) => {
-    const options = [...new Set(state.rows.flatMap((row) => values(row, key)))]
+    const options = [...(state.filterOptions.get(key) || [])]
       .map((canonical) => ({ canonical, visible: translateCanonicalValue(key, canonical) }))
       .sort((first, second) => collator.compare(first.visible, second.visible));
     const wrapper = document.createElement('div');
@@ -539,7 +770,7 @@ function buildFilters(selections = {}) {
     });
 
     select.value = selections[key] || '';
-    select.addEventListener('change', applyFilters);
+    select.addEventListener('change', () => handleInterfaceChange('push'));
     wrapper.append(label, select);
     container.append(wrapper);
   });
@@ -595,6 +826,7 @@ function render() {
     ? t('results.one')
     : t('results.many', { count: resultCount });
   $('download-csv').disabled = resultCount === 0;
+  $('copy-view-link').disabled = false;
   $('status').className = 'status';
 
   if (resultCount === 0) {
@@ -648,13 +880,7 @@ function createCard(row) {
   }));
   button.setAttribute('aria-haspopup', 'dialog');
   button.setAttribute('aria-controls', 'initiative-dialog');
-  button.addEventListener('click', () => openDialog(row, button));
-  button.addEventListener('keydown', (event) => {
-    if (!event.repeat && (event.key === 'Enter' || event.key === ' ')) {
-      event.preventDefault();
-      openDialog(row, button);
-    }
-  });
+  button.addEventListener('click', () => openDialogFromCard(row, button));
 
   if (id) cardTriggers.set(id, button);
   footer.append(tag, button);
@@ -785,6 +1011,7 @@ function renderDetailField(row, key, labelKey) {
 function renderDialogContent(row) {
   const content = $('dialog-content');
   const closeButton = $('close-dialog');
+  const copyButton = $('copy-dialog-link');
   const id = display(column(row, FIELDS.id));
   const name = display(localizedColumn(row, 'name')) || t('card.unnamed');
   const title = document.createElement('h2');
@@ -801,25 +1028,122 @@ function renderDialogContent(row) {
   });
 
   closeButton.setAttribute('aria-label', t('dialog.closeAria', { identifier: id || name }));
+  copyButton.disabled = false;
+  copyButton.textContent = t('share.dialog');
+  copyButton.setAttribute('aria-label', t('share.dialogAria', {
+    identifier: id || t('card.initiative'),
+    name
+  }));
   content.replaceChildren(title, details);
 }
 
 function openDialog(row, trigger) {
   const dialog = $('initiative-dialog');
   state.dialogRow = row;
-  lastDialogTrigger = trigger;
+  if (trigger) lastDialogTrigger = trigger;
   renderDialogContent(row);
-  dialog.showModal();
+  if (!dialog.open) dialog.showModal();
+  updateDocumentTitle();
   $('close-dialog').focus({ preventScroll: true });
+}
+
+function openDialogFromCard(row, trigger) {
+  const interfaceState = collectInterfaceState();
+  interfaceState.id = display(column(row, FIELDS.id));
+  clearUrlNotice();
+  writeUrlState('push', interfaceState, { dialogEntry: true });
+  openDialog(row, trigger);
+}
+
+function closeDialogVisual() {
+  const dialog = $('initiative-dialog');
+  if (dialog.open) {
+    dialog.close();
+    return;
+  }
+
+  state.dialogRow = null;
+  lastDialogTrigger = null;
+  $('copy-dialog-link').disabled = true;
+  updateDocumentTitle();
+}
+
+function requestDialogClose() {
+  if (!$('initiative-dialog').open) return;
+
+  if (isDialogHistoryEntry()) {
+    window.history.back();
+    return;
+  }
+
+  const interfaceState = collectInterfaceState();
+  interfaceState.id = '';
+  writeUrlState('replace', interfaceState, { dialogEntry: false });
+  closeDialogVisual();
 }
 
 function restoreDialogFocus() {
   const trigger = lastDialogTrigger;
   state.dialogRow = null;
   lastDialogTrigger = null;
+  $('copy-dialog-link').disabled = true;
+  updateDocumentTitle();
   if (trigger?.isConnected && typeof trigger.focus === 'function') {
     trigger.focus({ preventScroll: true });
+  } else {
+    $('search').focus({ preventScroll: true });
   }
+}
+
+function fallbackCopyText(text) {
+  const previouslyFocused = document.activeElement;
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.readOnly = true;
+  textarea.setAttribute('aria-hidden', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  textarea.style.opacity = '0';
+  document.body.append(textarea);
+  textarea.select();
+
+  let copied = false;
+  try {
+    copied = document.execCommand('copy');
+  } catch (error) {
+    copied = false;
+  }
+
+  textarea.remove();
+  if (previouslyFocused?.isConnected && typeof previouslyFocused.focus === 'function') {
+    previouslyFocused.focus({ preventScroll: true });
+  }
+  return copied;
+}
+
+async function copyText(text, services = {}) {
+  const clipboard = Object.prototype.hasOwnProperty.call(services, 'clipboard')
+    ? services.clipboard
+    : navigator.clipboard;
+  const fallback = services.fallback || fallbackCopyText;
+
+  try {
+    if (clipboard?.writeText) {
+      await clipboard.writeText(text);
+      return true;
+    }
+  } catch (error) {
+    // Continúa con el respaldo compatible con navegadores antiguos.
+  }
+
+  return fallback(text);
+}
+
+async function copyCurrentLink(includeId) {
+  const interfaceState = collectInterfaceState();
+  if (!includeId) interfaceState.id = '';
+  const url = createCanonicalUrl(interfaceState, { includeId });
+  announceCopyResult(await copyText(url.href));
 }
 
 function downloadCSV() {
@@ -846,26 +1170,111 @@ function downloadCSV() {
 function renderLoadError() {
   $('result-count').textContent = t('error.short');
   $('download-csv').disabled = true;
+  $('copy-view-link').disabled = true;
   $('status').className = 'status error';
   $('status').textContent = t('error.load');
 }
 
-function setLanguage(language) {
+function setLanguage(language, { updateUrl = true } = {}) {
   if (!VALID_LANGUAGES.includes(language)) return;
 
-  const selections = currentFilterSelections();
+  const selections = state.loaded ? currentFilterSelections() : {};
   state.language = language;
   writeStoredLanguage(language);
-  updateLanguageUrl(language);
+  $('copy-status').textContent = '';
   applyStaticTranslations();
 
   if (state.loaded) {
     buildFilters(selections);
     applyFilters();
-    if ($('initiative-dialog').open && state.dialogRow) renderDialogContent(state.dialogRow);
+    if ($('initiative-dialog').open && state.dialogRow) {
+      renderDialogContent(state.dialogRow);
+      updateDocumentTitle();
+    }
   } else if (state.loadError) {
     renderLoadError();
   }
+
+  if (updateUrl) {
+    const urlState = state.loaded
+      ? collectInterfaceState()
+      : { ...readUrlState(), lang: language };
+    writeUrlState('replace', urlState, {
+      dialogEntry: Boolean(urlState.id) && isDialogHistoryEntry()
+    });
+  }
+}
+
+function applyUrlState(rawState = readUrlState()) {
+  if (!state.loaded || state.applyingUrl) return;
+
+  window.clearTimeout(searchUrlTimer);
+  const sanitized = sanitizeUrlState(rawState);
+  state.applyingUrl = true;
+
+  try {
+    state.urlNoticeKey = sanitized.invalidIdRequested ? 'url.idNotFound' : '';
+    state.language = sanitized.lang;
+    writeStoredLanguage(state.language);
+    $('search').value = sanitized.q;
+    $('sort').value = sanitized.sort;
+    applyStaticTranslations();
+    buildFilters(sanitized);
+    applyFilters();
+
+    const row = sanitized.id ? findRowById(sanitized.id) : null;
+    if (row) {
+      const trigger = isDialogHistoryEntry() ? cardTriggers.get(sanitized.id) || null : null;
+      openDialog(row, trigger);
+    } else if ($('initiative-dialog').open) {
+      closeDialogVisual();
+    } else {
+      state.dialogRow = null;
+      updateDocumentTitle();
+    }
+
+    writeUrlState('replace', sanitized, {
+      dialogEntry: Boolean(sanitized.id) && isDialogHistoryEntry()
+    });
+  } finally {
+    state.applyingUrl = false;
+  }
+}
+
+function handlePopState() {
+  if (!state.loaded) return;
+  applyUrlState(readUrlState());
+}
+
+function handleInterfaceChange(mode) {
+  if (!state.loaded || state.applyingUrl) return;
+  clearUrlNotice();
+  applyFilters();
+  writeUrlState(mode);
+}
+
+function handleSearchInput() {
+  if (!state.loaded || state.applyingUrl) return;
+  clearUrlNotice();
+  applyFilters();
+  window.clearTimeout(searchUrlTimer);
+  searchUrlTimer = window.setTimeout(() => writeUrlState('replace'), SEARCH_URL_DELAY);
+}
+
+function clearFilters() {
+  window.clearTimeout(searchUrlTimer);
+  $('search').value = '';
+  $('sort').value = 'name-asc';
+  $('filters').querySelectorAll('select').forEach((select) => {
+    select.value = '';
+  });
+  clearUrlNotice();
+  applyFilters();
+
+  const interfaceState = collectInterfaceState();
+  interfaceState.id = '';
+  writeUrlState('push', interfaceState, { dialogEntry: false });
+  if ($('initiative-dialog').open) closeDialogVisual();
 }
 
 async function init() {
@@ -883,8 +1292,8 @@ async function init() {
     if (missing.length) throw new Error(`Faltan columnas esperadas: ${missing.join(', ')}`);
 
     state.loaded = true;
-    buildFilters();
-    applyFilters();
+    buildDataIndexes();
+    applyUrlState(readUrlState());
   } catch (error) {
     state.loadError = error;
     console.error(t('error.console'), error);
@@ -892,29 +1301,32 @@ async function init() {
   }
 }
 
-$('search').addEventListener('input', applyFilters);
-$('sort').addEventListener('change', applyFilters);
+$('search').addEventListener('input', handleSearchInput);
+$('sort').addEventListener('change', () => handleInterfaceChange('push'));
 $('language-select').addEventListener('change', (event) => setLanguage(event.target.value));
 $('download-csv').addEventListener('click', downloadCSV);
-$('clear-filters').addEventListener('click', () => {
-  $('search').value = '';
-  $('sort').value = 'name-asc';
-  $('filters').querySelectorAll('select').forEach((select) => {
-    select.value = '';
-  });
-  applyFilters();
-});
-$('close-dialog').addEventListener('click', () => $('initiative-dialog').close());
+$('copy-view-link').addEventListener('click', () => copyCurrentLink(false));
+$('copy-dialog-link').addEventListener('click', () => copyCurrentLink(true));
+$('clear-filters').addEventListener('click', clearFilters);
+$('close-dialog').addEventListener('click', requestDialogClose);
 $('initiative-dialog').addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
     event.preventDefault();
-    $('initiative-dialog').close();
+    requestDialogClose();
   }
 });
+$('initiative-dialog').addEventListener('cancel', (event) => {
+  event.preventDefault();
+  requestDialogClose();
+});
 $('initiative-dialog').addEventListener('close', restoreDialogFocus);
+window.addEventListener('popstate', handlePopState);
 
-state.language = resolveInitialLanguage();
+const initialUrlState = readUrlState();
+const initialInterfaceState = sanitizeUrlState(initialUrlState, { dataReady: false });
+state.language = initialInterfaceState.lang;
+$('search').value = initialInterfaceState.q;
+$('sort').value = initialInterfaceState.sort;
 writeStoredLanguage(state.language);
-updateLanguageUrl(state.language);
 applyStaticTranslations();
 init();
