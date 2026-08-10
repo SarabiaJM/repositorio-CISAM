@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Consulta de iniciativas universitarias de bienestar emocional y salud mental en las universidades valencianas.">
   <title>Repositorio de Iniciativas en Salud Mental de las Universidades Valencianas</title>
-  <link rel="stylesheet" href="styles.css?v=7">
+  <link rel="stylesheet" href="styles.css?v=8">
   <script src="app.js" defer></script>
 </head>
 <body>
@@ -62,8 +62,13 @@ de las Universidades Valencianas</span>
     <section class="results-section" aria-labelledby="results-title">
       <div class="results-heading">
         <div><h2 id="results-title" data-i18n="results.title">Iniciativas</h2><p id="result-count" class="result-count" role="status" aria-live="polite" aria-atomic="true" data-i18n="loading.short">Cargando…</p></div>
-        <button id="download-csv" class="button button-primary" type="button" disabled data-i18n="download.label" data-i18n-aria-label="download.ariaLabel">Descargar CSV filtrado</button>
+        <div class="results-actions">
+          <button id="copy-view-link" class="button button-secondary" type="button" disabled data-i18n="share.view" data-i18n-aria-label="share.viewAria">Copiar enlace de esta vista</button>
+          <button id="download-csv" class="button button-primary" type="button" disabled data-i18n="download.label" data-i18n-aria-label="download.ariaLabel">Descargar CSV filtrado</button>
+        </div>
       </div>
+      <p id="url-notice" class="url-notice" role="status" aria-live="polite" aria-atomic="true"></p>
+      <p id="copy-status" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></p>
       <div id="status" class="status" data-i18n="loading.long">Cargando iniciativas…</div>
       <div id="cards" class="cards"></div>
     </section>
@@ -91,6 +96,9 @@ Delegación del Rector para Campus Saludables y Deportes</p>
   <dialog id="initiative-dialog" class="initiative-dialog" aria-labelledby="dialog-title">
     <div class="dialog-top"><p class="eyebrow" data-i18n="dialog.eyebrow">FICHA DE LA INICIATIVA</p><button id="close-dialog" class="icon-button" type="button" aria-label="Cerrar ficha" data-i18n-aria-label="dialog.close">×</button></div>
     <div id="dialog-content"></div>
+    <div class="dialog-actions">
+      <button id="copy-dialog-link" class="button button-secondary" type="button" disabled data-i18n="share.dialog">Copiar enlace de esta ficha</button>
+    </div>
   </dialog>
   <div id="dialog-backdrop" class="dialog-backdrop" hidden></div>
 </body>
