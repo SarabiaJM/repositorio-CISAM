@@ -68,15 +68,16 @@ a {
 .header-inner {
   display: flex;
   align-items: center;
+  gap: 24px;
   min-height: 148px;
   max-width: 1400px;
 }
 
 .brand {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   gap: 18px;
-  width: 100%;
   min-width: 0;
   color: var(--ink);
   text-decoration: none;
@@ -105,6 +106,31 @@ a {
   line-height: 1.08;
   letter-spacing: -0.025em;
   overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+.language-control {
+  display: grid;
+  flex: 0 0 170px;
+  gap: 5px;
+  min-width: 0;
+}
+
+.language-control label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.language-control select {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding: 9px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 7px;
 }
 
 .intro {
@@ -416,6 +442,7 @@ a {
   font-size: 13px;
   line-height: 1.55;
   text-align: center;
+  white-space: pre-line;
   border-top: 1px solid rgba(255, 255, 255, 0.18);
 }
 
@@ -545,6 +572,9 @@ a {
 
 @media (max-width: 560px) {
   .header-inner {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
     min-height: 112px;
     padding-top: 14px;
     padding-bottom: 14px;
@@ -565,6 +595,12 @@ a {
   .brand-title {
     font-size: 18px;
     line-height: 1.2;
+  }
+
+  .language-control {
+    width: min(180px, 100%);
+    flex-basis: auto;
+    align-self: flex-end;
   }
 
   .container,
